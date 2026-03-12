@@ -150,12 +150,6 @@ def build_webhook_payload(
     char_count: int,
     contract_text: str = "",
 ) -> dict:
-    # ── Party data extracted by the agent ─────────────────────────────────────
-    parties          = result.get("parties", {})
-    employee         = parties.get("employee", {})
-    employer         = parties.get("employer", {})
-    contract_details = parties.get("contract_details", {})
-
     # ── Risk score ────────────────────────────────────────────────────────────
     high_risk_count = len(result.get("high_risk", []))
     attention_count = len(result.get("needs_attention", []))
@@ -166,27 +160,27 @@ def build_webhook_payload(
         "pipeline_version": "1.0",
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
 
-        # ── Employee (extracted from contract) ────────────────────────────────
+        # ── Employee (extracted by agent from contract) ───────────────────────
         "employee": {
-            "name":        employee.get("name", ""),
-            "nationality": employee.get("nationality", ""),
-            "id_number":   employee.get("id_number", ""),
-            "job_title":   employee.get("job_title", ""),
+            "name":        result.get("employee_name", ""),
+            "job_title":   result.get("employee_job_title", ""),
+            "nationality": result.get("employee_nationality", ""),
+            "id_number":   result.get("employee_id_number", ""),
         },
 
-        # ── Employer (extracted from contract) ────────────────────────────────
+        # ── Employer (extracted by agent from contract) ───────────────────────
         "employer": {
-            "company_name":         employer.get("company_name", ""),
-            "company_address":      employer.get("company_address", ""),
-            "representative_name":  employer.get("representative_name", ""),
-            "representative_title": employer.get("representative_title", ""),
+            "company_name":         result.get("employer_company_name", ""),
+            "company_address":      result.get("employer_company_address", ""),
+            "representative_name":  result.get("employer_representative_name", ""),
+            "representative_title": result.get("employer_representative_title", ""),
         },
 
-        # ── Contract details (extracted from contract) ────────────────────────
+        # ── Contract details (extracted by agent from contract) ───────────────
         "contract_details": {
-            "start_date":        contract_details.get("start_date", ""),
-            "contract_duration": contract_details.get("contract_duration", ""),
-            "work_location":     contract_details.get("work_location", ""),
+            "start_date":        result.get("contract_start_date", ""),
+            "contract_duration": result.get("contract_duration", ""),
+            "work_location":     result.get("work_location", ""),
         },
 
         # ── Document metadata ─────────────────────────────────────────────────
@@ -220,7 +214,7 @@ def build_webhook_payload(
 
         # ── Agent metadata ────────────────────────────────────────────────────
         "agent_metadata": {
-            "model": "gpt-4o-mini",
+            "model": "gpt-4o",
             "total_findings": (
                 len(result.get("benefits", [])) +
                 len(result.get("obligations", [])) +

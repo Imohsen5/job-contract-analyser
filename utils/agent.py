@@ -55,7 +55,10 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "finish_review",
-            "description": "Call this once you have recorded all findings to submit your final review.",
+            "description": (
+                "Call this once you have recorded all findings to submit your final review. "
+                "Also extract all party information (employee and employer) from the contract."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -69,6 +72,53 @@ TOOLS = [
                             "2-3 sentences in the language of the contract: what kind of contract this is "
                             "and its overall risk level for the employee."
                         ),
+                    },
+                    # ── Employee fields ──────────────────────────────────────
+                    "employee_name": {
+                        "type": "string",
+                        "description": "Full name of the employee (second party) as it appears in the contract.",
+                    },
+                    "employee_job_title": {
+                        "type": "string",
+                        "description": "Job title of the employee as stated in the contract.",
+                    },
+                    "employee_nationality": {
+                        "type": "string",
+                        "description": "Nationality of the employee if mentioned in the contract.",
+                    },
+                    "employee_id_number": {
+                        "type": "string",
+                        "description": "National ID, passport, or Iqama number of the employee if present.",
+                    },
+                    # ── Employer fields ──────────────────────────────────────
+                    "employer_company_name": {
+                        "type": "string",
+                        "description": "Full legal name of the employer company (first party).",
+                    },
+                    "employer_company_address": {
+                        "type": "string",
+                        "description": "Address of the employer company if stated in the contract.",
+                    },
+                    "employer_representative_name": {
+                        "type": "string",
+                        "description": "Full name of the person signing on behalf of the employer.",
+                    },
+                    "employer_representative_title": {
+                        "type": "string",
+                        "description": "Title or role of the employer's signatory (e.g. HR Manager, CEO).",
+                    },
+                    # ── Contract detail fields ───────────────────────────────
+                    "contract_start_date": {
+                        "type": "string",
+                        "description": "Contract or employment start date as written in the contract.",
+                    },
+                    "contract_duration": {
+                        "type": "string",
+                        "description": "Duration or end date of the contract if specified.",
+                    },
+                    "work_location": {
+                        "type": "string",
+                        "description": "City, office, or location where the employee will work.",
                     },
                 },
                 "required": ["document_type", "summary"],
@@ -101,7 +151,10 @@ Step 1 — call add_finding() for every clause you identify. Cover ALL of these:
   • Binding to unseen policies or future changes except for clearly defined categories like "workplace conduct" or "governance policies"
   • Work location and job title flexibility
 
-Step 2 — call finish_review() once with the document type and a summary.
+Step 2 — call finish_review() once with the document type, summary, AND all party details
+         (employee name, job title, nationality, ID; employer company name, address,
+          representative name and title; contract start date, duration, work location).
+         Extract these directly from the contract text — do not leave them blank if present.
 
 ════════════════════════════════
 EVIDENCE RULES
@@ -230,7 +283,6 @@ def run_agent(
                         "tokens":      usage.total_tokens,
                     })
 
-                    # Acknowledge the tool call
                     messages.append({
                         "role":         "tool",
                         "tool_call_id": tool_call.id,
@@ -242,6 +294,20 @@ def run_agent(
                     final_meta = {
                         "document_type": args.get("document_type", "Employment Document"),
                         "summary":       args.get("summary", ""),
+                        # Employee
+                        "employee_name":         args.get("employee_name", ""),
+                        "employee_job_title":    args.get("employee_job_title", ""),
+                        "employee_nationality":  args.get("employee_nationality", ""),
+                        "employee_id_number":    args.get("employee_id_number", ""),
+                        # Employer
+                        "employer_company_name":         args.get("employer_company_name", ""),
+                        "employer_company_address":      args.get("employer_company_address", ""),
+                        "employer_representative_name":  args.get("employer_representative_name", ""),
+                        "employer_representative_title": args.get("employer_representative_title", ""),
+                        # Contract details
+                        "contract_start_date": args.get("contract_start_date", ""),
+                        "contract_duration":   args.get("contract_duration", ""),
+                        "work_location":       args.get("work_location", ""),
                     }
 
                     messages.append({
@@ -264,12 +330,25 @@ def run_agent(
                     })
 
                     return {
-                        "document_type":    final_meta.get("document_type", "Employment Document"),
-                        "summary":          final_meta.get("summary", ""),
-                        "benefits":         findings["benefit"],
-                        "obligations":      findings["obligation"],
-                        "needs_attention":  findings["needs_attention"],
-                        "high_risk":        findings["high_risk"],
+                        "document_type": final_meta.get("document_type", "Employment Document"),
+                        "summary":       final_meta.get("summary", ""),
+                        # ── Flat party fields returned at top level ──────────
+                        "employee_name":                  final_meta.get("employee_name", ""),
+                        "employee_job_title":             final_meta.get("employee_job_title", ""),
+                        "employee_nationality":           final_meta.get("employee_nationality", ""),
+                        "employee_id_number":             final_meta.get("employee_id_number", ""),
+                        "employer_company_name":          final_meta.get("employer_company_name", ""),
+                        "employer_company_address":       final_meta.get("employer_company_address", ""),
+                        "employer_representative_name":   final_meta.get("employer_representative_name", ""),
+                        "employer_representative_title":  final_meta.get("employer_representative_title", ""),
+                        "contract_start_date":            final_meta.get("contract_start_date", ""),
+                        "contract_duration":              final_meta.get("contract_duration", ""),
+                        "work_location":                  final_meta.get("work_location", ""),
+                        # ── Findings ─────────────────────────────────────────
+                        "benefits":           findings["benefit"],
+                        "obligations":        findings["obligation"],
+                        "needs_attention":    findings["needs_attention"],
+                        "high_risk":          findings["high_risk"],
                         "negotiation_points": [f["point"] for f in findings["negotiation_point"]],
                         "legal_note": (
                             "This analysis is informational only. "
@@ -280,7 +359,6 @@ def run_agent(
 
         # ── Model stopped without calling finish_review ───────────────────────
         else:
-            # Nudge it to finish
             messages.append({
                 "role":    "user",
                 "content": "You have not called finish_review yet. Please call it now to complete the review.",
