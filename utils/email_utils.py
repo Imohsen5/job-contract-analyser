@@ -13,11 +13,10 @@ def draft_inquiry_email(
     """
     Draft a professional inquiry email based on contract findings.
 
-    - Detects the contract language and writes the email in that language.
+    - Detects the contract language and writes the email in that same language.
     - Extracts real names and company from the contract text automatically.
     - Writes as this specific employee, not as a generic policy commentator.
-    - Only raises points that are genuinely unclear or need negotiation —
-      not standard legal boilerplate.
+    - Only raises points that are genuinely unclear or need negotiation.
     """
 
     # Collect only genuinely actionable points
@@ -27,72 +26,83 @@ def draft_inquiry_email(
         point    = item.get("point", "")
         evidence = item.get("evidence", "")
         page     = item.get("page", "")
-        ref      = f' — النص الوارد: "{evidence}" (صفحة {page})' if evidence else ""
-        points_to_raise.append(f"[يحتاج توضيح] {point}{ref}")
+        ref      = f' (Clause: "{evidence}", Page {page})' if evidence else ""
+        points_to_raise.append(f"[Needs clarification] {point}{ref}")
 
     for item in result.get("high_risk", []):
         point    = item.get("point", "")
         evidence = item.get("evidence", "")
         page     = item.get("page", "")
-        ref      = f' — النص الوارد: "{evidence}" (صفحة {page})' if evidence else ""
-        points_to_raise.append(f"[بند يحتاج مراجعة] {point}{ref}")
+        ref      = f' (Clause: "{evidence}", Page {page})' if evidence else ""
+        points_to_raise.append(f"[Needs review] {point}{ref}")
 
     for pt in result.get("negotiation_points", []):
-        points_to_raise.append(f"[نقطة تفاوض] {pt}")
+        points_to_raise.append(f"[Negotiation] {pt}")
 
     if not points_to_raise:
-        return "لم يتم تحديد أي نقاط غير واضحة أو عالية الخطورة تستوجب التواصل مع صاحب العمل."
+        return "No unclear or high-risk clauses were found that require raising with the employer."
 
     points_block = "\n".join(f"- {p}" for p in points_to_raise)
 
-    # Provide only the first 3000 chars for name extraction — enough to find all parties
+    # First 3000 chars is enough to find all party names and contract language
     contract_excerpt = contract_text[:3000]
 
-    prompt = f"""أنت تساعد موظفًا جديدًا على صياغة رسالة بريد إلكتروني احترافية إلى صاحب العمل.
+    sender_line    = f"Sender name: {sender_name.strip()}" if sender_name.strip() else "Use the employee name extracted from the contract."
+    recipient_line = f"Recipient: {recipient_title.strip()}" if recipient_title.strip() else "Address the email to the company representative who signed the contract."
 
-الهدف: الاستفسار بأدب عن بنود معينة في عقد العمل الخاص به قبل التوقيع، أو بعد مراجعته.
+    prompt = f"""You are helping a new employee draft a professional email to their prospective employer.
 
-══════════════════════════════
-تعليمات صارمة
-══════════════════════════════
-
-1. اكتب الرسالة باللغة العربية الفصحى، لأن العقد محرر بالعربية.
-
-2. استخرج من النص التالي للعقد:
-   - اسم الموظف (الطرف الثاني)
-   - اسم الشركة (الطرف الأول)
-   - اسم ممثل الشركة الموقع على العقد
-   - المسمى الوظيفي للموظف
-   واستخدمها في الرسالة مباشرة. إذا لم تجد معلومة معينة، استخدم [اسم الشركة] أو [اسم المسؤول] كبديل.
-
-3. اكتب الرسالة بصوت الموظف نفسه — وليس بصوت ممثل جماعي أو ناقد للسياسات العامة.
-   مثال صحيح: "لاحظت في عقدي أن..."
-   مثال خاطئ: "قد لا يفهم الموظفون هذا البند..."
-
-4. اذكر فقط النقاط الواردة أدناه — لا تُضف نقاطًا من عندك.
-
-5. لكل نقطة: اذكر النص الحرفي من العقد إن وُجد، ثم اطرح سؤالًا محددًا وعمليًا.
-
-6. لا تنتقد أنظمة العمل السعودية أو الاشتراطات القانونية العامة — هذه ليست قابلة للتفاوض وإثارتها تُضعف موقف الموظف.
-
-7. الأسلوب: مهني، محترم، ودود — لا متذمر ولا متصادم.
-
-8. اختتم بشكر واضح وطلب موعد للحوار.
+The goal is to politely ask for clarification or negotiation on specific clauses in their employment contract.
 
 ══════════════════════════════
-مقتطف من العقد (لاستخراج الأسماء)
+STRICT RULES
+══════════════════════════════
+
+1. LANGUAGE: Detect the language the contract is written in (e.g. Arabic, English) from the
+   contract excerpt below, and write the entire email in that same language.
+   Do not translate. If the contract is in Arabic, the email must be in Arabic.
+   If the contract is in English, the email must be in English.
+
+2. NAMES: Extract from the contract excerpt:
+   - Employee name (second party)
+   - Company name (first party)
+   - Company representative who signed the contract
+   - Employee job title
+   Use these directly in the email. If any detail is missing, use a placeholder like
+   [Company Name] or [Manager Name].
+
+3. VOICE: Write in the employee's own voice — as one specific person asking about
+   their own contract. Never write as a collective or as someone critiquing general policy.
+   Correct: "I noticed in my contract that..."
+   Wrong:   "Employees may not understand this clause..."
+
+4. SCOPE: Raise only the points listed below. Do not add or invent any additional concerns.
+
+5. FOR EACH POINT: Reference the exact clause wording from the contract where provided,
+   then ask one specific and practical question about it.
+
+6. Do NOT question standard labour law requirements or general legal boilerplate —
+   these are non-negotiable and raising them weakens the employee's position.
+
+7. TONE: Professional, respectful, and constructive. Not confrontational or complainy.
+
+8. Close with a clear thank-you and a request to discuss at a convenient time.
+
+══════════════════════════════
+CONTRACT EXCERPT (for name and language detection)
 ══════════════════════════════
 {contract_excerpt}
 
 ══════════════════════════════
-النقاط المراد إثارتها
+POINTS TO RAISE IN THE EMAIL
 ══════════════════════════════
 {points_block}
 
-{"اسم المُرسِل: " + sender_name.strip() if sender_name.strip() else "استخدم اسم الموظف المستخرج من العقد."}
-{"المُرسَل إليه: " + recipient_title.strip() if recipient_title.strip() else "وجّه الرسالة لممثل الشركة الموقّع على العقد."}
+{sender_line}
+{recipient_line}
 
-اكتب الرسالة كاملة فقط — بسطر الموضوع، ثم المتن، ثم التحية الختامية. لا تكتب أي شيء قبلها أو بعدها.
+Write the complete email only — subject line, body, and sign-off.
+Do not write anything before or after the email.
 """
 
     response = client.chat.completions.create(

@@ -148,59 +148,77 @@ def build_webhook_payload(
     result: dict,
     pages: list,
     char_count: int,
-    contract_text: str,
-    client_name: str = "",
-    client_email: str = ""
+    contract_text: str = "",
 ) -> dict:
+    # ── Party data extracted by the agent ─────────────────────────────────────
+    parties          = result.get("parties", {})
+    employee         = parties.get("employee", {})
+    employer         = parties.get("employer", {})
+    contract_details = parties.get("contract_details", {})
 
-    high_risk = len(result.get("high_risk", []))
-    attention = len(result.get("needs_attention", []))
-
-    risk_score = high_risk * 5 + attention * 2
-
-    if risk_score >= 10:
-        risk_level = "HIGH"
-    elif risk_score >= 5:
-        risk_level = "MEDIUM"
-    else:
-        risk_level = "LOW"
+    # ── Risk score ────────────────────────────────────────────────────────────
+    high_risk_count = len(result.get("high_risk", []))
+    attention_count = len(result.get("needs_attention", []))
+    risk_score      = high_risk_count * 5 + attention_count * 2
+    risk_level      = "HIGH" if risk_score >= 10 else "MEDIUM" if risk_score >= 5 else "LOW"
 
     return {
         "pipeline_version": "1.0",
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
 
-        "client": {
-            "name": client_name,
-            "email": client_email,
-            "country": "Saudi Arabia"
+        # ── Employee (extracted from contract) ────────────────────────────────
+        "employee": {
+            "name":        employee.get("name", ""),
+            "nationality": employee.get("nationality", ""),
+            "id_number":   employee.get("id_number", ""),
+            "job_title":   employee.get("job_title", ""),
         },
 
+        # ── Employer (extracted from contract) ────────────────────────────────
+        "employer": {
+            "company_name":         employer.get("company_name", ""),
+            "company_address":      employer.get("company_address", ""),
+            "representative_name":  employer.get("representative_name", ""),
+            "representative_title": employer.get("representative_title", ""),
+        },
+
+        # ── Contract details (extracted from contract) ────────────────────────
+        "contract_details": {
+            "start_date":        contract_details.get("start_date", ""),
+            "contract_duration": contract_details.get("contract_duration", ""),
+            "work_location":     contract_details.get("work_location", ""),
+        },
+
+        # ── Document metadata ─────────────────────────────────────────────────
         "document": {
-            "type": result.get("document_type", ""),
-            "pages": len(pages),
-            "characters": char_count,
-            "estimated_tokens": char_count // 4
+            "type":             result.get("document_type", ""),
+            "pages":            len(pages),
+            "characters":       char_count,
+            "estimated_tokens": char_count // 4,
         },
 
         "extracted_text": {
             "full_text": contract_text,
-            "pages": pages
+            "pages":     pages,
         },
 
+        # ── Analysis findings ─────────────────────────────────────────────────
         "analysis": {
-            "summary": result.get("summary", ""),
-            "benefits": result.get("benefits", []),
-            "obligations": result.get("obligations", []),
-            "needs_attention": result.get("needs_attention", []),
-            "high_risk": result.get("high_risk", []),
-            "negotiation_points": result.get("negotiation_points", [])
+            "summary":            result.get("summary", ""),
+            "benefits":           result.get("benefits", []),
+            "obligations":        result.get("obligations", []),
+            "needs_attention":    result.get("needs_attention", []),
+            "high_risk":          result.get("high_risk", []),
+            "negotiation_points": result.get("negotiation_points", []),
         },
 
+        # ── Risk assessment ───────────────────────────────────────────────────
         "risk_assessment": {
             "risk_score": risk_score,
-            "risk_level": risk_level
+            "risk_level": risk_level,
         },
 
+        # ── Agent metadata ────────────────────────────────────────────────────
         "agent_metadata": {
             "model": "gpt-4o-mini",
             "total_findings": (
@@ -209,13 +227,10 @@ def build_webhook_payload(
                 len(result.get("needs_attention", [])) +
                 len(result.get("high_risk", [])) +
                 len(result.get("negotiation_points", []))
-            )
+            ),
         },
 
-        "legal_note": result.get(
-            "legal_note",
-            "This analysis is informational only."
-        )
+        "legal_note": result.get("legal_note", "This analysis is informational only."),
     }
 
 
@@ -400,14 +415,7 @@ if "result" in st.session_state:
     st.divider()
     st.subheader("🔗 Send to n8n")
 
-    payload = build_webhook_payload(
-    result,
-    pages,
-    char_count,
-    contract_text,
-    client_name="",
-    client_email=""
-    )
+    payload = build_webhook_payload(result, pages, char_count, contract_text)
 
     wh_col1, wh_col2 = st.columns([3, 1])
     with wh_col1:
