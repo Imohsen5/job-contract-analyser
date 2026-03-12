@@ -32,7 +32,7 @@ TOOLS = [
                     },
                     "point": {
                         "type": "string",
-                        "description": "Plain-English explanation of what this means for the employee.",
+                        "description": "Plain explanation in the language of the contract of what this means for the employee.",
                     },
                     "evidence": {
                         "type": "string",
@@ -66,7 +66,7 @@ TOOLS = [
                     "summary": {
                         "type": "string",
                         "description": (
-                            "2-3 sentences in plain English: what kind of contract this is "
+                            "2-3 sentences in the language of the contract: what kind of contract this is "
                             "and its overall risk level for the employee."
                         ),
                     },
@@ -98,10 +98,8 @@ Step 1 — call add_finding() for every clause you identify. Cover ALL of these:
   • Non-compete restrictions
   • Salary deductions and financial penalties
   • Resignation conditions and penalties
-  • Rights waivers (clauses where signing = giving up rights)
-  • Binding to unseen policies or future changes
+  • Binding to unseen policies or future changes except for clearly defined categories like "workplace conduct" or "governance policies"
   • Work location and job title flexibility
-  • Language of the contract (risk if employee doesn't understand it)
 
 Step 2 — call finish_review() once with the document type and a summary.
 
@@ -125,9 +123,8 @@ Use high_risk for:
 - Overtime with no separate compensation
 - Unlimited deductions from salary
 - Employee must follow unseen policies
-- Employee pays fees the employer should pay
+- Employee pays fees for work-related equipment or expenses
 - Financial penalty for resigning
-- Signing waives all current and future rights
 - Immediate termination with no notice or compensation
 
 Use needs_attention for clauses that are vague, one-sided, or missing key details but not immediately dangerous.
@@ -194,7 +191,7 @@ def run_agent(
         iter_start = time.perf_counter()
 
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-4o",
             messages=messages,
             tools=TOOLS,
             temperature=0.0,

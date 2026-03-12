@@ -5,67 +5,100 @@ from typing import Any, Dict, List
 
 def draft_inquiry_email(
     result: Dict[str, Any],
+    contract_text: str,
     client: OpenAI,
     sender_name: str = "",
-    recipient_title: str = "HR / Hiring Manager",
+    recipient_title: str = "",
 ) -> str:
     """
-    Draft a professional inquiry email based on the contract findings.
-    Uses needs_attention, high_risk, and negotiation_points from the agent result.
+    Draft a professional inquiry email based on contract findings.
+
+    - Detects the contract language and writes the email in that language.
+    - Extracts real names and company from the contract text automatically.
+    - Writes as this specific employee, not as a generic policy commentator.
+    - Only raises points that are genuinely unclear or need negotiation —
+      not standard legal boilerplate.
     """
 
-    # Build a concise brief of what needs clarification
+    # Collect only genuinely actionable points
     points_to_raise: List[str] = []
 
     for item in result.get("needs_attention", []):
-        quote = item.get("evidence", "")
-        point = item.get("point", "")
-        page  = item.get("page", "")
-        ref   = f' (Page {page}, clause: "{quote}")' if quote else ""
-        points_to_raise.append(f"[Unclear clause] {point}{ref}")
+        point    = item.get("point", "")
+        evidence = item.get("evidence", "")
+        page     = item.get("page", "")
+        ref      = f' — النص الوارد: "{evidence}" (صفحة {page})' if evidence else ""
+        points_to_raise.append(f"[يحتاج توضيح] {point}{ref}")
 
     for item in result.get("high_risk", []):
-        quote = item.get("evidence", "")
-        point = item.get("point", "")
-        page  = item.get("page", "")
-        ref   = f' (Page {page}, clause: "{quote}")' if quote else ""
-        points_to_raise.append(f"[Concerning clause] {point}{ref}")
+        point    = item.get("point", "")
+        evidence = item.get("evidence", "")
+        page     = item.get("page", "")
+        ref      = f' — النص الوارد: "{evidence}" (صفحة {page})' if evidence else ""
+        points_to_raise.append(f"[بند يحتاج مراجعة] {point}{ref}")
 
     for pt in result.get("negotiation_points", []):
-        points_to_raise.append(f"[Negotiation] {pt}")
+        points_to_raise.append(f"[نقطة تفاوض] {pt}")
 
     if not points_to_raise:
-        return "No unclear or high-risk points were found to raise in an email."
+        return "لم يتم تحديد أي نقاط غير واضحة أو عالية الخطورة تستوجب التواصل مع صاحب العمل."
 
     points_block = "\n".join(f"- {p}" for p in points_to_raise)
-    sender_line  = sender_name.strip() if sender_name.strip() else "[Your Name]"
-    doc_type     = result.get("document_type", "the contract")
 
-    prompt = f"""You are helping a job seeker write a professional, polite email to their prospective employer.
-The email should ask for clarification or negotiation on specific points in {doc_type}.
+    # Provide only the first 3000 chars for name extraction — enough to find all parties
+    contract_excerpt = contract_text[:3000]
 
-Tone: professional, respectful, and constructive — not confrontational.
+    prompt = f"""أنت تساعد موظفًا جديدًا على صياغة رسالة بريد إلكتروني احترافية إلى صاحب العمل.
 
-Points to raise (include all of them, grouped logically):
+الهدف: الاستفسار بأدب عن بنود معينة في عقد العمل الخاص به قبل التوقيع، أو بعد مراجعته.
+
+══════════════════════════════
+تعليمات صارمة
+══════════════════════════════
+
+1. اكتب الرسالة باللغة العربية الفصحى، لأن العقد محرر بالعربية.
+
+2. استخرج من النص التالي للعقد:
+   - اسم الموظف (الطرف الثاني)
+   - اسم الشركة (الطرف الأول)
+   - اسم ممثل الشركة الموقع على العقد
+   - المسمى الوظيفي للموظف
+   واستخدمها في الرسالة مباشرة. إذا لم تجد معلومة معينة، استخدم [اسم الشركة] أو [اسم المسؤول] كبديل.
+
+3. اكتب الرسالة بصوت الموظف نفسه — وليس بصوت ممثل جماعي أو ناقد للسياسات العامة.
+   مثال صحيح: "لاحظت في عقدي أن..."
+   مثال خاطئ: "قد لا يفهم الموظفون هذا البند..."
+
+4. اذكر فقط النقاط الواردة أدناه — لا تُضف نقاطًا من عندك.
+
+5. لكل نقطة: اذكر النص الحرفي من العقد إن وُجد، ثم اطرح سؤالًا محددًا وعمليًا.
+
+6. لا تنتقد أنظمة العمل السعودية أو الاشتراطات القانونية العامة — هذه ليست قابلة للتفاوض وإثارتها تُضعف موقف الموظف.
+
+7. الأسلوب: مهني، محترم، ودود — لا متذمر ولا متصادم.
+
+8. اختتم بشكر واضح وطلب موعد للحوار.
+
+══════════════════════════════
+مقتطف من العقد (لاستخراج الأسماء)
+══════════════════════════════
+{contract_excerpt}
+
+══════════════════════════════
+النقاط المراد إثارتها
+══════════════════════════════
 {points_block}
 
-Sender name: {sender_line}
-Recipient: {recipient_title}
+{"اسم المُرسِل: " + sender_name.strip() if sender_name.strip() else "استخدم اسم الموظف المستخرج من العقد."}
+{"المُرسَل إليه: " + recipient_title.strip() if recipient_title.strip() else "وجّه الرسالة لممثل الشركة الموقّع على العقد."}
 
-Write a complete, ready-to-send email with:
-- A clear subject line
-- A brief opening (1-2 sentences thanking them and expressing continued interest)
-- One short paragraph per issue, referencing the exact clause wording where provided
-- A positive closing that keeps the conversation open
-- A professional sign-off
-
-Return only the email text. No commentary before or after it.
+اكتب الرسالة كاملة فقط — بسطر الموضوع، ثم المتن، ثم التحية الختامية. لا تكتب أي شيء قبلها أو بعدها.
 """
 
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[{"role": "user", "content": prompt}],
-        temperature=0.4,
+        temperature=0.3,
     )
 
     return response.choices[0].message.content.strip()

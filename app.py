@@ -144,21 +144,78 @@ def render_trace(trace_log: list):
         col3.metric("Total tokens",      done["final_tokens"]["total"])
 
 
-def build_webhook_payload(result: dict, pages: list, char_count: int) -> dict:
+def build_webhook_payload(
+    result: dict,
+    pages: list,
+    char_count: int,
+    contract_text: str,
+    client_name: str = "",
+    client_email: str = ""
+) -> dict:
+
+    high_risk = len(result.get("high_risk", []))
+    attention = len(result.get("needs_attention", []))
+
+    risk_score = high_risk * 5 + attention * 2
+
+    if risk_score >= 10:
+        risk_level = "HIGH"
+    elif risk_score >= 5:
+        risk_level = "MEDIUM"
+    else:
+        risk_level = "LOW"
+
     return {
-        "meta": {
-            "document_type": result.get("document_type", ""),
-            "pages":         len(pages),
-            "characters":    char_count,
-            "timestamp":     time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "pipeline_version": "1.0",
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+
+        "client": {
+            "name": client_name,
+            "email": client_email,
+            "country": "Saudi Arabia"
         },
-        "summary":            result.get("summary", ""),
-        "benefits":           result.get("benefits", []),
-        "obligations":        result.get("obligations", []),
-        "needs_attention":    result.get("needs_attention", []),
-        "high_risk":          result.get("high_risk", []),
-        "negotiation_points": result.get("negotiation_points", []),
-        "legal_note":         result.get("legal_note", ""),
+
+        "document": {
+            "type": result.get("document_type", ""),
+            "pages": len(pages),
+            "characters": char_count,
+            "estimated_tokens": char_count // 4
+        },
+
+        "extracted_text": {
+            "full_text": contract_text,
+            "pages": pages
+        },
+
+        "analysis": {
+            "summary": result.get("summary", ""),
+            "benefits": result.get("benefits", []),
+            "obligations": result.get("obligations", []),
+            "needs_attention": result.get("needs_attention", []),
+            "high_risk": result.get("high_risk", []),
+            "negotiation_points": result.get("negotiation_points", [])
+        },
+
+        "risk_assessment": {
+            "risk_score": risk_score,
+            "risk_level": risk_level
+        },
+
+        "agent_metadata": {
+            "model": "gpt-4o-mini",
+            "total_findings": (
+                len(result.get("benefits", [])) +
+                len(result.get("obligations", [])) +
+                len(result.get("needs_attention", [])) +
+                len(result.get("high_risk", [])) +
+                len(result.get("negotiation_points", []))
+            )
+        },
+
+        "legal_note": result.get(
+            "legal_note",
+            "This analysis is informational only."
+        )
     }
 
 
@@ -221,22 +278,24 @@ if run_btn:
         )
 
     # Persist to session state so interactions below don't wipe the results
-    st.session_state["result"]     = result
-    st.session_state["pages"]      = pages
-    st.session_state["char_count"] = char_count
-    st.session_state["trace_log"]  = trace_log
-    st.session_state["client"]     = client
+    st.session_state["result"]        = result
+    st.session_state["pages"]         = pages
+    st.session_state["char_count"]    = char_count
+    st.session_state["trace_log"]     = trace_log
+    st.session_state["client"]        = client
+    st.session_state["contract_text"] = total_text
     # Clear any previous email draft when a new analysis runs
     st.session_state.pop("email_draft", None)
 
 # ── Render results ────────────────────────────────────────────────────────────
 
 if "result" in st.session_state:
-    result     = st.session_state["result"]
-    pages      = st.session_state["pages"]
-    char_count = st.session_state["char_count"]
-    trace_log  = st.session_state["trace_log"]
-    client     = st.session_state["client"]
+    result        = st.session_state["result"]
+    pages         = st.session_state["pages"]
+    char_count    = st.session_state["char_count"]
+    trace_log     = st.session_state["trace_log"]
+    client        = st.session_state["client"]
+    contract_text = st.session_state.get("contract_text", "")
 
     # FIX: proper if-block instead of ternary that returned a DeltaGenerator object
     st.success("✅ Analysis complete!")
@@ -274,23 +333,22 @@ if "result" in st.session_state:
         st.markdown("---")
         st.subheader("✉️ Draft Inquiry Email")
         st.caption(
-            "Generate a professional email to send to your employer asking for "
-            "clarification on unclear or risky clauses — with the exact contract "
-            "wording referenced in each question."
+            "Generates a professional email in the contract's language. "
+            "Names and company are extracted automatically from the contract — "
+            "only fill in the fields below if you want to override them."
         )
 
         with st.form("email_form"):
             col_a, col_b = st.columns(2)
             with col_a:
                 sender_name = st.text_input(
-                    "Your name (optional)",
-                    placeholder="e.g. Ahmed Al-Zahrani",
+                    "Your name (optional — auto-detected from contract)",
+                    placeholder="Leave blank to use name from contract",
                 )
             with col_b:
                 recipient_title = st.text_input(
-                    "Recipient title (optional)",
-                    placeholder="e.g. HR Manager",
-                    value="HR / Hiring Manager",
+                    "Recipient title (optional — auto-detected from contract)",
+                    placeholder="Leave blank to use signatory from contract",
                 )
             draft_btn = st.form_submit_button("✉️ Generate Email Draft", type="primary")
 
@@ -308,12 +366,13 @@ if "result" in st.session_state:
                     "No unclear or risky clauses were found — nothing to raise in an email."
                 )
             else:
-                # Spinner renders inside the placeholder, right below the button
                 with email_placeholder.container():
                     with st.spinner("Drafting your email..."):
                         try:
                             email_draft = draft_inquiry_email(
-                                result, client,
+                                result,
+                                contract_text,
+                                client,
                                 sender_name=sender_name,
                                 recipient_title=recipient_title,
                             )
@@ -321,7 +380,7 @@ if "result" in st.session_state:
                         except Exception as e:
                             st.error(f"Failed to draft email: {e}")
 
-        # Display the draft if it exists — st.code has a built-in copy button
+        # Display the draft — st.code has a built-in copy button (⧉ top-right)
         if "email_draft" in st.session_state:
             st.markdown("**📋 Your draft — copy and send:**")
             st.caption("Click the copy icon (⧉) in the top-right corner of the box.")
@@ -341,7 +400,14 @@ if "result" in st.session_state:
     st.divider()
     st.subheader("🔗 Send to n8n")
 
-    payload = build_webhook_payload(result, pages, char_count)
+    payload = build_webhook_payload(
+    result,
+    pages,
+    char_count,
+    contract_text,
+    client_name="",
+    client_email=""
+    )
 
     wh_col1, wh_col2 = st.columns([3, 1])
     with wh_col1:
